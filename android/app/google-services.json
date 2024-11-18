@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "801699019954",
+    "project_id": "cuantrack",
+    "storage_bucket": "cuantrack.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:801699019954:android:33d006ad280977ae4dddab",
+        "android_client_info": {
+          "package_name": "com.example.cuantrack"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "801699019954-18k6o9rdum8scrp6qfv0jq050dqrgq7a.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.cuantrack",
+            "certificate_hash": "d7f158452f748922368f23bbbb7e8f8c6b70b7e4"
+          }
+        },
+        {
+          "client_id": "801699019954-bo6bgcm7o91no940lrbavdsrbju8ri4j.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCde8CG_Js5uuG39kKZkxQJK8UrgP5pppo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "801699019954-bo6bgcm7o91no940lrbavdsrbju8ri4j.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "801699019954-9g2kjvhijic7ojd2v0n8812jmjl4j4u7.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.cuantrack"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
