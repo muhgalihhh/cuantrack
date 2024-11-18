@@ -12,5 +12,5 @@ key.properties
 **/*.keystore
 **/*.jks
 
-# git ignore google-services.json yang ada di app/src/google-services.json
-app/src/google-services.json
+# git ignore google-services.json yang ada di app/src/google-services.jso
+google-services.json
