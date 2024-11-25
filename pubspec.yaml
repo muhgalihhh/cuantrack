@@ -42,6 +42,8 @@ dependencies:
   google_sign_in: ^6.2.2
   get_storage: ^2.1.1
   path_provider: ^2.1.5
+  fl_chart: ^0.65.0
+  intl: ^0.18.0
 
 dev_dependencies:
   flutter_test:
