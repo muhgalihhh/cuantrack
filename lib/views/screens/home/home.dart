@@ -1,4 +1,5 @@
 import 'package:cuantrack/controllers/google_auth.dart';
+import 'package:cuantrack/controllers/transaction_controller.dart';
 import 'package:cuantrack/services/theme_services.dart';
 import 'package:cuantrack/views/widgets/add_expense.dart';
 import 'package:cuantrack/views/widgets/add_income.dart';
@@ -15,7 +16,54 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final FirebaseService _firebaseService = FirebaseService();
+  final FirebaseTransactionController _firebaseTransactionController = FirebaseTransactionController();
+
   bool _isLoading = false; // Untuk indikasi loading saat logout
+  List<Map<String, dynamic>> _transactions = []; // List transaksi
+  late double _totalBalance = 0.0; // Total balance
+  late double _totalExpense = 0.0; // Total expense
+  late Map<String, dynamic> _progressData = {'value': 0.0, 'color': Colors.green, 'message': ''}; // Data progres
+
+  // Inisialisasi data
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  // Load Balances dan Expenses dari FireStore
+  Future<void> _loadData() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final transactions = await _firebaseTransactionController.fetchTransactions();
+
+      setState(() {
+        _transactions = transactions;
+        _totalBalance = _firebaseTransactionController.calculateBalance(transactions);
+        _totalExpense = transactions
+          .where((transaction) => transaction['type'] == 'expense')
+          .fold(0.0, (sum, transaction) => sum + (transaction['amount'] ?? 0.0));
+        _progressData = _firebaseTransactionController.calculateProgress(_totalExpense, _totalBalance);
+      });
+
+    } catch (e) {
+      final colorScheme = Theme.of(context).colorScheme;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   // Fungsi untuk menampilkan opsi transaksi
   void _showTransactionOptions() {
@@ -128,122 +176,13 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 24),
-              // Greeting Section
-              Text(
-                'Hi, Welcome Back',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              // tampilkan nama user
-              Text(
-                _firebaseService.currentUser?.displayName ?? '',
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
+              _buildGreetingSection(),
               const SizedBox(height: 16),
-
-              // Balance Summary Section
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF8E1),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Total Balance
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text(
-                          'Total Balance',
-                          style: TextStyle(fontSize: 16, color: Colors.grey),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          '\$7,783.00',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green,
-                          ),
-                        ),
-                      ],
-                    ),
-                    // Total Expense
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text(
-                          'Total Expense',
-                          style: TextStyle(fontSize: 16, color: Colors.grey),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          '-\$1,187.40',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.red,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+              _buildBalanceSummary(),
               const SizedBox(height: 16),
-
-              // Expense Progress Section
-              Row(
-                children: [
-                  Expanded(
-                    child: LinearProgressIndicator(
-                      value: 0.3,
-                      backgroundColor: Colors.grey[300],
-                      color: Colors.green,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Text('30%',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                ],
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                '30% of your expenses. Looks good!',
-                style: TextStyle(color: Colors.grey),
-              ),
+              _buildExpenseProgress(),
               const SizedBox(height: 24),
-
-              // Transaction List Section
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: 3,
-                itemBuilder: (context, index) {
-                  return _buildTransactionItem(
-                    title: index == 0
-                        ? 'Salary'
-                        : index == 1
-                            ? 'Groceries'
-                            : 'Rent',
-                    subtitle: index == 0
-                        ? '18:27 - April 30'
-                        : index == 1
-                            ? '17:00 - April 24'
-                            : '8:30 - April 15',
-                    amount: index == 0
-                        ? '\$4,000.00'
-                        : index == 1
-                            ? '-\$100.00'
-                            : '-\$674.40',
-                    color: index == 0 ? Colors.green : Colors.red,
-                    icon: Icons.account_balance_wallet,
-                  );
-                },
-              ),
+              _buildTransactionList(),
             ],
           ),
         ),
@@ -286,6 +225,109 @@ class _HomeScreenState extends State<HomeScreen> {
           color: color,
         ),
       ),
+    );
+  }
+
+  Widget _buildGreetingSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Hi, Welcome Back',
+          style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        Text(
+          _firebaseService.currentUser?.displayName ?? '',
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBalanceSummary() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _buildSummaryTile('Total Balance', _firebaseTransactionController.formatCurrency(_totalBalance), Colors.green),
+          _buildSummaryTile('Total Expense', _firebaseTransactionController.formatCurrency(_totalExpense), Colors.red),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryTile(String title, String value, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(fontSize: 16, color: Colors.grey)),
+        const SizedBox(height: 8),
+        Text(
+          value,
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExpenseProgress() {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: LinearProgressIndicator(
+                value: _progressData['value'],
+                backgroundColor: Colors.grey[300],
+                color: _progressData['color'],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '${(_progressData['value'] * 100).toStringAsFixed(0)}%',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _progressData['message'],
+          style: TextStyle(color: _progressData['color'], fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTransactionList() {
+    if (_transactions.isEmpty) {
+      return const Center(child: Text('Belum ada Transaksi'));
+    }
+
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _transactions.length,
+      itemBuilder: (context, index) {
+        final transaction = _transactions[index];
+        final typeColor = transaction['type'] == 'income' ? Colors.green : Colors.red;
+        DateTime transactionDate = transaction['date'];
+        String formattedDate = _firebaseTransactionController.formatDate(transactionDate);
+        
+        return ListTile(
+          leading: Icon(transaction['type'] == 'income' ? Icons.add : Icons.remove, color: typeColor),
+          title: Text(transaction['category'] ?? 'Tidak ada Kategori'),
+          subtitle: Text(formattedDate),
+          trailing: Text(
+            _firebaseTransactionController.formatCurrency(transaction['amount']),
+            style: TextStyle(fontWeight: FontWeight.bold, color: typeColor),
+          ),
+        );
+      },
     );
   }
 }
