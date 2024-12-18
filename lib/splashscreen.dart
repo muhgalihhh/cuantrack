@@ -37,20 +37,21 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor:
+          Theme.of(context).scaffoldBackgroundColor, // Default background
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             ScaleTransition(
               scale: _scaleAnimation,
-              child: Icon(
-                Icons.account_balance_wallet,
-                size: 100.0,
-                color: Colors.blue,
+              child: Image.asset(
+                'assets/icons/ic_launcher.png', // Path ke file gambar ic_launcher
+                width: 120.0, // Lebar gambar
+                height: 120.0, // Tinggi gambar
               ),
             ),
-            const SizedBox(height: 20.0),
+            const SizedBox(height: 30.0),
             TweenAnimationBuilder<double>(
               tween: Tween<double>(begin: 0.0, end: 1.0),
               duration: const Duration(seconds: 2),
@@ -59,10 +60,26 @@ class _SplashScreenState extends State<SplashScreen>
                   opacity: value,
                   child: Text(
                     "CuanTrack",
-                    style: Theme.of(context).textTheme.headlineLarge,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontSize: 32.0,
+                      fontWeight: FontWeight.bold,
+                      shadows: [
+                        Shadow(
+                          blurRadius: 5.0,
+                          color: Colors.black.withOpacity(0.2),
+                          offset: const Offset(2, 2),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },
+            ),
+            const SizedBox(height: 20.0),
+            CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(
+                Theme.of(context).colorScheme.primary, // Default primary color
+              ),
             ),
           ],
         ),

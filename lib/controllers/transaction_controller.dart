@@ -1,7 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 class FirebaseTransactionController {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -9,6 +7,53 @@ class FirebaseTransactionController {
 
   // Cek apakah pengguna sudah terautentikasi
   User? get currentUser => _auth.currentUser;
+
+  // Update user balance with more detailed tracking
+  Future<void> _updateUserBalance(
+      double amount, String type, String category) async {
+    final user = currentUser;
+    if (user == null) {
+      throw Exception('User not authenticated');
+    }
+
+    final userDoc = _firestore.collection('users').doc(user.uid);
+
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(userDoc);
+      final currentData = snapshot.data() ?? {};
+      final currentBalance = (currentData['balance'] ?? 0.0) as double;
+      final currentTotalIncome = (currentData['totalIncome'] ?? 0.0) as double;
+      final currentTotalExpense =
+          (currentData['totalExpense'] ?? 0.0) as double;
+      final currentBalanceHistory =
+          List<Map<String, dynamic>>.from(currentData['balanceHistory'] ?? []);
+
+      final updatedBalanceHistory = [
+        ...currentBalanceHistory.take(49), // Batasi maksimal 50 item
+        {
+          'amount': amount,
+          'type': type,
+          'category': category,
+          'date': Timestamp.now(), // Ganti serverTimestamp untuk efisiensi
+        },
+      ];
+
+      transaction.set(
+          userDoc,
+          {
+            'balance': currentBalance + amount,
+            'totalIncome': type == 'income'
+                ? currentTotalIncome + amount
+                : currentTotalIncome,
+            'totalExpense': type == 'expense'
+                ? currentTotalExpense + amount
+                : currentTotalExpense,
+            'lastUpdated': FieldValue.serverTimestamp(),
+            'balanceHistory': updatedBalanceHistory,
+          },
+          SetOptions(merge: true)); // Gunakan merge untuk menghindari overwrite
+    });
+  }
 
   // Add Income
   Future<void> addIncome({
@@ -23,15 +68,22 @@ class FirebaseTransactionController {
     }
 
     try {
+      print('Adding income...');
+      // Tambah transaksi
       await _firestore.collection('transactions').add({
         'type': 'income',
         'category': category,
         'amount': amount,
-        'date': Timestamp.fromDate(date), // Pake timestamp untuk mengurangi inconsistencies
+        'date': Timestamp.fromDate(date),
         'notes': notes ?? '',
-        'userId': user.uid, // Menyimpan ID pengguna
+        'userId': user.uid,
       });
+      print('Income added to transactions.');
+
+      // Update balance dengan tipe 'income'
+      await _updateUserBalance(amount, 'income', category);
     } catch (e) {
+      print('Error adding income: $e');
       throw Exception('Failed to add income: $e');
     }
   }
@@ -49,21 +101,27 @@ class FirebaseTransactionController {
     }
 
     try {
+      print('Adding expense...');
+      // Tambah transaksi
       await _firestore.collection('transactions').add({
         'type': 'expense',
         'category': category,
         'amount': amount,
-        'date': Timestamp.fromDate(date), // Pake timestamp untuk mengurangi inconsistencies
+        'date': Timestamp.fromDate(date),
         'notes': notes ?? '',
-        'userId': user.uid, // Menyimpan ID pengguna
+        'userId': user.uid,
       });
+      print('Expense added to transactions.');
+
+      // Update balance dengan tipe 'expense'
+      await _updateUserBalance(-amount, 'expense', category);
     } catch (e) {
+      print('Error adding expense: $e');
       throw Exception('Failed to add expense: $e');
     }
   }
 
-  // Fetch Transactions for the authenticated user
-  Future<List<Map<String, dynamic>>> fetchTransactions() async {
+  Future<Map<String, List<Map<String, dynamic>>>> fetchTransactions() async {
     final user = currentUser;
     if (user == null) {
       throw Exception('User not authenticated');
@@ -75,79 +133,141 @@ class FirebaseTransactionController {
           .where('userId', isEqualTo: user.uid)
           .orderBy('date', descending: true)
           .get();
-      
-      // Convert snapshot ke List<Map<String, dynamic>>
-      return snapshot.docs.map((doc) {
+
+      if (snapshot.docs.isEmpty) {
+        return {}; // If there are no transactions
+      }
+
+      // Process grouping
+      Map<String, List<Map<String, dynamic>>> groupedTransactions = {
+        'Today': [],
+        'Yesterday': [],
+        'Previous Days': [],
+      };
+
+      DateTime now = DateTime.now();
+      DateTime yesterday = now.subtract(const Duration(days: 1));
+      DateTime sevenDaysAgo = now.subtract(const Duration(days: 7));
+      DateTime twoDaysAgo = now.subtract(const Duration(days: 2));
+
+      for (var doc in snapshot.docs) {
         final data = doc.data();
-        return {
-          'id': doc.id,
-          ...data,
-          'date': (data['date'] as Timestamp).toDate(), // Convert timestamp ke DateTime
-        };
-      }).toList();
+        // Convert Timestamp to DateTime
+        DateTime transactionDate = (data['date'] as Timestamp).toDate();
+
+        if (_isSameDay(transactionDate, now)) {
+          groupedTransactions['Today']?.add({'id': doc.id, ...data});
+        } else if (_isSameDay(transactionDate, yesterday)) {
+          groupedTransactions['Yesterday']?.add({'id': doc.id, ...data});
+        } else if (transactionDate.isAfter(sevenDaysAgo) &&
+            transactionDate.isBefore(twoDaysAgo)) {
+          groupedTransactions['Previous Days']?.add({'id': doc.id, ...data});
+        }
+      }
+
+      print('Transactions fetched: $groupedTransactions');
+
+      return groupedTransactions;
     } catch (e) {
       throw Exception('Failed to fetch transactions: $e');
     }
   }
 
-  // Format currency
-  String formatCurrency(double value) {
-    final formatter = NumberFormat.currency(locale: 'id', symbol: 'Rp', decimalDigits: 2);
-    return formatter.format(value);
+  // Fungsi untuk membandingkan apakah dua tanggal adalah hari yang sama
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
   }
 
-  // Format DateTime
-  String formatDate(DateTime dateTime, {String format = 'dd-MM-yyyy HH:mm'}) {
-    return DateFormat(format).format(dateTime);
-  }
+  // Fetch user balance details
+  Future<Map<String, dynamic>> getUserBalanceDetails() async {
+    final user = currentUser;
+    if (user == null) {
+      throw Exception('User not authenticated');
+    }
 
-  // Hitung saldo
-  double calculateBalance(List<Map<String, dynamic>> transactions) {
-    double income = 0;
-    double expense = 0;
+    try {
+      print('Fetching user balance details...');
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
 
-    for (var transaction in transactions) {
-      if (transaction['type'] == 'income') {
-        income += transaction['amount'];
-      } else if (transaction['type'] == 'expense') {
-        expense += transaction['amount'];
+      if (!userDoc.exists) {
+        print('User balance document does not exist.');
+        return {
+          'balance': 0.0,
+          'totalIncome': 0.0,
+          'totalExpense': 0.0,
+          'lastUpdated': null,
+          'balanceHistory': []
+        };
       }
-    }
 
-    return income - expense;
+      final data = userDoc.data()!;
+      print('User balance details fetched: $data');
+      return {
+        'balance': data['balance'] ?? 0.0,
+        'totalIncome': data['totalIncome'] ?? 0.0,
+        'totalExpense': data['totalExpense'] ?? 0.0,
+        'lastUpdated': data['lastUpdated'],
+        'balanceHistory': data['balanceHistory'] ?? []
+      };
+    } catch (e) {
+      print('Error fetching balance details: $e');
+      throw Exception('Failed to fetch balance details: $e');
+    }
   }
 
-  // Hitung progres
-  Map<String, dynamic> calculateProgress(double expense, double balance) {
-    final value = balance == 0 ? 0 : (expense / balance);
-    Color color;
-    String message;
-
-    // Pesan
-    if (expense == 0) {
-      color = Colors.blue;
-      message = 'Belum ada pengeluaran.';
-    } else if (expense < balance * 0.25) {
-      color = Colors.green;
-      message = 'Pengeluaran terkontrol.';
-    } else if (expense < balance * 0.5) {
-      color = Colors.lightGreen;
-      message = 'Bagus! Terus jaga pengeluaran.';
-    } else if (expense < balance * 0.75) {
-      color = Colors.orange;
-      message = 'Hati-hati! Pengeluaran mulai tinggi.';
-    } else if (expense <= balance) {
-      color = Colors.deepOrange;
-      message = 'Pengeluaran hampir mencapai batas!';
-    } else {
-      color = Colors.red;
-      message = 'Pengeluaran terlalu besar!';
+  Future<Map<String, List<Map<String, dynamic>>>> filteredFetch({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    final user = currentUser;
+    if (user == null) {
+      throw Exception('User not authenticated');
     }
 
-    return {
-      'value': value,
-      'color': color,
-      'message': message,
-    };
+    try {
+      final snapshot = await _firestore
+          .collection('transactions')
+          .where('userId', isEqualTo: user.uid)
+          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+          .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
+          .orderBy('date', descending: true)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        return {}; // If there are no transactions within the filtered range
+      }
+
+      // Process grouping
+      Map<String, List<Map<String, dynamic>>> groupedTransactions = {
+        'Today': [],
+        'Yesterday': [],
+        'Previous Days': [],
+      };
+
+      DateTime now = DateTime.now();
+      DateTime yesterday = now.subtract(const Duration(days: 1));
+      DateTime sevenDaysAgo = now.subtract(const Duration(days: 7));
+
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        DateTime transactionDate = (data['date'] as Timestamp).toDate();
+
+        if (_isSameDay(transactionDate, now)) {
+          groupedTransactions['Today']?.add({'id': doc.id, ...data});
+        } else if (_isSameDay(transactionDate, yesterday)) {
+          groupedTransactions['Yesterday']?.add({'id': doc.id, ...data});
+        } else if (transactionDate.isAfter(sevenDaysAgo)) {
+          groupedTransactions['Previous Days']?.add({'id': doc.id, ...data});
+        }
+      }
+
+      print('Filtered transactions fetched: $groupedTransactions');
+
+      return groupedTransactions;
+    } catch (e) {
+      throw Exception('Failed to fetch filtered transactions: $e');
+    }
   }
 }

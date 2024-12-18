@@ -116,10 +116,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 children: [
                   const SizedBox(height: 40),
                   Center(
-                    child: Icon(
-                      Icons.account_balance_wallet,
-                      size: 80,
-                      color: colorScheme.primary,
+                    child: Image.asset(
+                      'assets/icons/ic_launcher.png', // Path ke file gambar ic_launcher
+                      width: 120.0, // Lebar gambar
+                      height: 120.0, // Tinggi gambar
                     ),
                   ),
                   const SizedBox(height: 24),
