@@ -64,6 +64,21 @@ class FirebaseAnalysisController {
         };
       }
 
+      // Normalize startDate and endDate for inclusive filtering
+      DateTime normalizedStartDate = DateTime(
+        startDate.year,
+        startDate.month,
+        startDate.day,
+      );
+      DateTime normalizedEndDate = DateTime(
+        endDate.year,
+        endDate.month,
+        endDate.day,
+        23,
+        59,
+        59,
+      );
+
       // Initialize category-based aggregates
       Map<String, double> incomeByCategory = {
         for (var category in incomeCategoriesList) category: 0.0
@@ -96,8 +111,16 @@ class FirebaseAnalysisController {
 
         final date = dateTimestamp.toDate();
 
-        // Filter by date range
-        if (date.isAfter(startDate) && date.isBefore(endDate)) {
+        // Debugging: Print transaction details
+        print('Transaction Date: $date');
+        print('Start Date: $normalizedStartDate');
+        print('End Date: $normalizedEndDate');
+        print(
+            'Condition: ${!date.isBefore(normalizedStartDate) && !date.isAfter(normalizedEndDate)}');
+
+        // Filter by date range (inclusive)
+        if (!date.isBefore(normalizedStartDate) &&
+            !date.isAfter(normalizedEndDate)) {
           if (type == 'income') {
             totalIncome += amount;
             incomeCount++;
@@ -118,9 +141,7 @@ class FirebaseAnalysisController {
           });
         }
       }
-      print('trendData: $trendData');
-      print(startDate);
-      print(endDate);
+
       if (trendData.isEmpty) {
         return {
           'totalIncome': totalIncome,
@@ -144,7 +165,7 @@ class FirebaseAnalysisController {
         'trendData': trendData,
       };
     } catch (e) {
-      throw Exception('No transactions found in the selected date range.');
+      throw Exception('Failed to fetch categorized summary: $e');
     }
   }
 }

@@ -21,60 +21,100 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _notificationService.init();
+    _initializeSettings();
+  }
+
+  Future<void> _initializeSettings() async {
+    await _notificationService.init();
+    await _loadSavedReminderTime();
+  }
+
+  Future<void> _loadSavedReminderTime() async {
+    final savedTime = await _notificationService.getSavedReminderTime();
+    if (savedTime != null && mounted) {
+      setState(() {
+        _selectedReminderTime = savedTime;
+      });
+    }
   }
 
   Future<void> _selectReminderTime() async {
-    final TimeOfDay? pickedTime = await showTimePicker(
-      context: context,
-      initialTime: _selectedReminderTime ?? TimeOfDay.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            timePickerTheme: TimePickerThemeData(
-              backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-              hourMinuteShape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.all(Radius.circular(8)),
-              ),
-              dayPeriodShape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.all(Radius.circular(8)),
-              ),
-              dayPeriodBorderSide: BorderSide(
-                color: Theme.of(context).primaryColor,
-              ),
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.all(Radius.circular(12)),
+    try {
+      // Check and request permission first
+      final bool hasPermission =
+          await _notificationService.handleReminderPermission(context);
+
+      if (!hasPermission) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content:
+                  Text('Notifications permission is required to set reminders'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      final TimeOfDay? pickedTime = await showTimePicker(
+        context: context,
+        initialTime: _selectedReminderTime ?? TimeOfDay.now(),
+        builder: (context, child) {
+          return Theme(
+            data: Theme.of(context).copyWith(
+              timePickerTheme: TimePickerThemeData(
+                backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                hourMinuteShape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(8)),
+                ),
+                dayPeriodShape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(8)),
+                ),
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                ),
               ),
             ),
-          ),
-          child: child!,
-        );
-      },
-    );
+            child: child!,
+          );
+        },
+      );
 
-    if (pickedTime != null) {
-      setState(() {
-        _selectedReminderTime = pickedTime;
-      });
+      if (pickedTime != null) {
+        await _notificationService.scheduleReminderNotification(pickedTime);
 
-      await _notificationService.scheduleReminderNotification(pickedTime);
+        if (mounted) {
+          setState(() {
+            _selectedReminderTime = pickedTime;
+          });
 
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Reminder set for ${pickedTime.format(context)}',
+                style: const TextStyle(color: Colors.white),
+              ),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Reminder set for ${pickedTime.format(context)}',
-              style: const TextStyle(color: Colors.white),
-            ),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.green,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-            duration: const Duration(seconds: 2),
+          const SnackBar(
+            content: Text('Failed to set reminder. Please try again.'),
+            backgroundColor: Colors.red,
           ),
         );
       }
+      debugPrint('Error setting reminder: $e');
     }
   }
 
@@ -85,42 +125,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(15),
         ),
-        title: const Text(
-          'Confirm Logout',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: const Text(
-          'Are you sure you want to log out?',
-          style: TextStyle(fontSize: 16),
-        ),
+        title: const Text('Confirm Logout'),
+        content: const Text('Are you sure you want to log out?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: Text(
               'Cancel',
-              style: TextStyle(
-                color: Theme.of(context).primaryColor,
-              ),
+              style: TextStyle(color: Theme.of(context).primaryColor),
             ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text(
-              'Logout',
-              style: TextStyle(color: Colors.white),
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Logout'),
           ),
         ],
       ),
     );
 
     if (shouldLogout == true) {
+      await FirebaseAuth.instance.signOut();
+      // Cancel all notifications when logging out
+      await _notificationService.cancelAllNotifications();
       Get.offAllNamed('/login');
     }
   }
@@ -157,21 +184,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String? subtitle,
     VoidCallback? onTap,
     Color? color,
+    Widget? trailing,
   }) {
     return ListTile(
-      leading: Icon(
-        icon,
-        color: color ?? Theme.of(context).colorScheme.primary,
-      ),
+      leading:
+          Icon(icon, color: color ?? Theme.of(context).colorScheme.primary),
       title: Text(
         title,
-        style: TextStyle(
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
+        style: const TextStyle(fontWeight: FontWeight.w600),
       ),
       subtitle: subtitle != null ? Text(subtitle) : null,
-      trailing: const Icon(Icons.chevron_right),
+      trailing: trailing ?? const Icon(Icons.chevron_right),
       onTap: onTap,
     );
   }
@@ -195,7 +218,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // User Profile Header
+              // Profile Section
               Row(
                 children: [
                   CircleAvatar(
@@ -204,11 +227,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ? NetworkImage(_currentUser!.photoURL!)
                         : null,
                     child: _currentUser?.photoURL == null
-                        ? Icon(
-                            Icons.person,
-                            size: 40,
-                            color: Theme.of(context).primaryColor,
-                          )
+                        ? const Icon(Icons.person, size: 40)
                         : null,
                   ),
                   const SizedBox(width: 16),
@@ -218,10 +237,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       children: [
                         Text(
                           _currentUser?.displayName ?? 'User',
-                          style:
-                              Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                         Text(
                           _currentUser?.email ?? 'No email',
@@ -234,16 +253,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               const SizedBox(height: 20),
 
+              // Preferences Section
               _buildSettingsSection(
                 title: 'Preferences',
                 children: [
                   _buildSettingsTile(
                     icon: Icons.notifications,
-                    title: 'Reminder Time',
+                    title: 'Daily Reminder',
                     subtitle: _selectedReminderTime != null
-                        ? _selectedReminderTime!.format(context)
+                        ? 'Set for ${_selectedReminderTime!.format(context)}'
                         : 'Not set',
                     onTap: _selectReminderTime,
+                    trailing: _selectedReminderTime != null
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () async {
+                              await _notificationService
+                                  .cancelAllNotifications();
+                              setState(() {
+                                _selectedReminderTime = null;
+                              });
+                            },
+                          )
+                        : const Icon(Icons.chevron_right),
                   ),
                   _buildSettingsTile(
                     icon: Icons.palette,
@@ -254,24 +286,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
               const SizedBox(height: 20),
+
+              // Account Section
               _buildSettingsSection(
                 title: 'Account',
                 children: [
                   _buildSettingsTile(
-                    icon: Icons.person,
+                    icon: Icons.edit,
                     title: 'Edit Profile',
-                    subtitle: 'Update your profile information',
-                    onTap: () => showDialog(
-                      context: context,
-                      builder: (context) => const ProfileEditModal(),
-                    ),
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => const ProfileEditModal(),
+                      );
+                    },
                   ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              _buildSettingsSection(
-                title: 'Danger Zone',
-                children: [
                   _buildSettingsTile(
                     icon: Icons.logout,
                     title: 'Logout',

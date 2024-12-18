@@ -184,16 +184,6 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Get.isDarkMode ? Icons.dark_mode : Icons.light_mode),
             onPressed: () => ThemeService().switchTheme(),
           ),
-          IconButton(
-            onPressed: _handleLogout,
-            icon: _isLoading
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.logout),
-          ),
         ],
       ),
       body: SafeArea(

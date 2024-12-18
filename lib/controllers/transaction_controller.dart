@@ -10,7 +10,7 @@ class FirebaseTransactionController {
 
   // Update user balance with more detailed tracking
   Future<void> _updateUserBalance(
-      double amount, String type, String category) async {
+      double amount, String type, String category, DateTime? date) async {
     final user = currentUser;
     if (user == null) {
       throw Exception('User not authenticated');
@@ -34,7 +34,7 @@ class FirebaseTransactionController {
           'amount': amount,
           'type': type,
           'category': category,
-          'date': Timestamp.now(), // Ganti serverTimestamp untuk efisiensi
+          'date': date ?? FieldValue.serverTimestamp(),
         },
       ];
 
@@ -81,7 +81,7 @@ class FirebaseTransactionController {
       print('Income added to transactions.');
 
       // Update balance dengan tipe 'income'
-      await _updateUserBalance(amount, 'income', category);
+      await _updateUserBalance(amount, 'income', category, date);
     } catch (e) {
       print('Error adding income: $e');
       throw Exception('Failed to add income: $e');
@@ -114,7 +114,7 @@ class FirebaseTransactionController {
       print('Expense added to transactions.');
 
       // Update balance dengan tipe 'expense'
-      await _updateUserBalance(-amount, 'expense', category);
+      await _updateUserBalance(-amount, 'expense', category, date);
     } catch (e) {
       print('Error adding expense: $e');
       throw Exception('Failed to add expense: $e');
@@ -147,7 +147,7 @@ class FirebaseTransactionController {
 
       DateTime now = DateTime.now();
       DateTime yesterday = now.subtract(const Duration(days: 1));
-      DateTime sevenDaysAgo = now.subtract(const Duration(days: 7));
+      DateTime sevenDaysAgo = now.subtract(const Duration(days: 365));
       DateTime twoDaysAgo = now.subtract(const Duration(days: 2));
 
       for (var doc in snapshot.docs) {
@@ -248,7 +248,7 @@ class FirebaseTransactionController {
 
       DateTime now = DateTime.now();
       DateTime yesterday = now.subtract(const Duration(days: 1));
-      DateTime sevenDaysAgo = now.subtract(const Duration(days: 7));
+      DateTime sevenDaysAgo = now.subtract(const Duration(days: 365));
 
       for (var doc in snapshot.docs) {
         final data = doc.data();
@@ -262,9 +262,7 @@ class FirebaseTransactionController {
           groupedTransactions['Previous Days']?.add({'id': doc.id, ...data});
         }
       }
-
       print('Filtered transactions fetched: $groupedTransactions');
-
       return groupedTransactions;
     } catch (e) {
       throw Exception('Failed to fetch filtered transactions: $e');
